@@ -31,9 +31,9 @@
     <PackageLicenseExpression>BSD-3-Clause</PackageLicenseExpression>
     <Title>SIPSorcery</Title>
     <Summary>A cross platform C# .NET library for SIP, VoIP and WebRTC.</Summary>
-    <Description>6.0.9.1 解决ClientCallAnsweredHandler抛出ArgumentNullException异常导致系统崩溃问题
-Real-time communications library with full support for the Session Initiation Protocol (SIP) and WebRTC. No wrappers and no native libraries required.
-    </Description>
+    <Description>Real-time communications library with full support for the Session Initiation Protocol (SIP) and WebRTC. No wrappers and no native libraries required.
+6.0.9.1 解决ClientCallAnsweredHandler抛出ArgumentNullException异常导致系统崩溃问题
+6.0.9.2 解决OnReceiveRTPPacket空对象异常，临时处理</Description>
     <Company>SIP Sorcery PTY LTD</Company>
     <Product>SIPSorcery</Product>
     <PackageId>BJSoft.SIPSorcery</PackageId>
@@ -54,7 +54,7 @@ Real-time communications library with full support for the Session Initiation Pr
 -v6.0.2: Set .net6 targetted version as stable.
 -v6.0.1-pre: Added .net6 target.</PackageReleaseNotes>
     <NeutralLanguage>en</NeutralLanguage>
-    <Version>6.0.9.1</Version>
+    <Version>6.0.9.2</Version>
   </PropertyGroup>
 
   <PropertyGroup Label="SourceLink">

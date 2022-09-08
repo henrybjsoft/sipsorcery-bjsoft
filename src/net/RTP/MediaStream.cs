@@ -184,7 +184,7 @@ namespace SIPSorcery.net.RTP
 
         #region SECURITY CONTEXT
 
-        public void SetSecurityContext( ProtectRtpPacket protectRtp, ProtectRtpPacket unprotectRtp, ProtectRtpPacket protectRtcp, ProtectRtpPacket unprotectRtcp)
+        public void SetSecurityContext(ProtectRtpPacket protectRtp, ProtectRtpPacket unprotectRtp, ProtectRtpPacket protectRtcp, ProtectRtpPacket unprotectRtcp)
         {
             if (SecureContext != null)
             {
@@ -244,7 +244,7 @@ namespace SIPSorcery.net.RTP
 
         public SrtpHandler GetOrCreateSrtpHandler()
         {
-            if(SrtpHandler == null)
+            if (SrtpHandler == null)
             {
                 SrtpHandler = new SrtpHandler();
             }
@@ -276,7 +276,7 @@ namespace SIPSorcery.net.RTP
 
         protected Boolean CheckIfCanSendRtpRaw()
         {
-            if(IsClosed)
+            if (IsClosed)
             {
                 logger.LogWarning($"SendRtpRaw was called for an {MediaType} packet on an closed RTP session.");
                 return false;
@@ -288,7 +288,7 @@ namespace SIPSorcery.net.RTP
                 return false;
             }
 
-            if ( (LocalTrack.StreamStatus == MediaStreamStatusEnum.RecvOnly) || (LocalTrack.StreamStatus == MediaStreamStatusEnum.Inactive) )
+            if ((LocalTrack.StreamStatus == MediaStreamStatusEnum.RecvOnly) || (LocalTrack.StreamStatus == MediaStreamStatusEnum.Inactive))
             {
                 logger.LogWarning($"SendRtpRaw was called for an {MediaType} packet on an RTP session with a Stream Status set to {LocalTrack.StreamStatus}");
                 return false;
@@ -464,83 +464,90 @@ namespace SIPSorcery.net.RTP
 
         public void OnReceiveRTPPacket(RTPHeader hdr, int localPort, IPEndPoint remoteEndPoint, byte[] buffer, VideoStream videoStream = null)
         {
-            RTPPacket rtpPacket = null;
-            if (RemoteRtpEventPayloadID != 0 && hdr.PayloadType == RemoteRtpEventPayloadID)
+            try
             {
+                RTPPacket rtpPacket = null;
+                if (RemoteRtpEventPayloadID != 0 && hdr.PayloadType == RemoteRtpEventPayloadID)
+                {
+                    if (!EnsureBufferUnprotected(buffer, hdr, out rtpPacket))
+                    {
+                        return;
+                    }
+
+                    RaiseOnRtpEventByIndex(remoteEndPoint, new RTPEvent(rtpPacket.Payload), rtpPacket.Header);
+                    return;
+                }
+
+                // Set the remote track SSRC so that RTCP reports can match the media type.
+                if (RemoteTrack != null && RemoteTrack.Ssrc == 0 && DestinationEndPoint != null)
+                {
+                    bool isValidSource = AdjustRemoteEndPoint(hdr.SyncSource, remoteEndPoint);
+
+                    if (isValidSource)
+                    {
+                        logger.LogDebug($"Set remote track ({MediaType} - index={Index}) SSRC to {hdr.SyncSource}.");
+                        RemoteTrack.Ssrc = hdr.SyncSource;
+                    }
+                }
+
+
+                // Note AC 24 Dec 2020: The problem with waiting until the remote description is set is that the remote peer often starts sending
+                // RTP packets at the same time it signals its SDP offer or answer. Generally this is not a problem for audio but for video streams
+                // the first RTP packet(s) are the key frame and if they are ignored the video stream will take additional time or manual 
+                // intervention to synchronise.
+                //if (RemoteDescription != null)
+                //{
+
+                // Don't hand RTP packets to the application until the remote description has been set. Without it
+                // things like the common codec, DTMF support etc. are not known.
+
+                //SDPMediaTypesEnum mediaType = (rtpMediaType.HasValue) ? rtpMediaType.Value : DEFAULT_MEDIA_TYPE;
+
+                // For video RTP packets an attempt will be made to collate into frames. It's up to the application
+                // whether it wants to subscribe to frames of RTP packets.
+
+                rtpPacket = null;
+                if (RemoteTrack != null)
+                {
+                    LogIfWrongSeqNumber($"{MediaType}", hdr, RemoteTrack);
+                    ProcessHeaderExtensions(hdr);
+                }
                 if (!EnsureBufferUnprotected(buffer, hdr, out rtpPacket))
                 {
                     return;
                 }
 
-                RaiseOnRtpEventByIndex(remoteEndPoint, new RTPEvent(rtpPacket.Payload), rtpPacket.Header);
-                return;
-            }
-
-            // Set the remote track SSRC so that RTCP reports can match the media type.
-            if (RemoteTrack != null && RemoteTrack.Ssrc == 0 && DestinationEndPoint != null)
-            {
-                bool isValidSource = AdjustRemoteEndPoint(hdr.SyncSource, remoteEndPoint);
-
-                if (isValidSource)
+                var format = RemoteTrack.GetFormatForPayloadID(hdr.PayloadType);
+                if ((rtpPacket != null) && (format != null))
                 {
-                    logger.LogDebug($"Set remote track ({MediaType} - index={Index}) SSRC to {hdr.SyncSource}.");
-                    RemoteTrack.Ssrc = hdr.SyncSource;
-                }
-            }
 
-
-            // Note AC 24 Dec 2020: The problem with waiting until the remote description is set is that the remote peer often starts sending
-            // RTP packets at the same time it signals its SDP offer or answer. Generally this is not a problem for audio but for video streams
-            // the first RTP packet(s) are the key frame and if they are ignored the video stream will take additional time or manual 
-            // intervention to synchronise.
-            //if (RemoteDescription != null)
-            //{
-
-            // Don't hand RTP packets to the application until the remote description has been set. Without it
-            // things like the common codec, DTMF support etc. are not known.
-
-            //SDPMediaTypesEnum mediaType = (rtpMediaType.HasValue) ? rtpMediaType.Value : DEFAULT_MEDIA_TYPE;
-
-            // For video RTP packets an attempt will be made to collate into frames. It's up to the application
-            // whether it wants to subscribe to frames of RTP packets.
-
-            rtpPacket = null;
-            if (RemoteTrack != null)
-            {
-                LogIfWrongSeqNumber($"{MediaType}", hdr, RemoteTrack);
-                ProcessHeaderExtensions(hdr);
-            }
-            if (!EnsureBufferUnprotected(buffer, hdr, out rtpPacket))
-            {
-                return;
-            }
-
-            var format = RemoteTrack.GetFormatForPayloadID(hdr.PayloadType);
-            if ( (rtpPacket != null) && (format != null) )
-            {
-
-                if (UseBuffer())
-                {
-                    var reorderBuffer = GetBuffer();
-                    reorderBuffer.Add(rtpPacket);
-                    while (reorderBuffer.Get(out var bufferedPacket))
+                    if (UseBuffer())
                     {
-                        if (RemoteTrack != null)
+                        var reorderBuffer = GetBuffer();
+                        reorderBuffer.Add(rtpPacket);
+                        while (reorderBuffer.Get(out var bufferedPacket))
                         {
-                            LogIfWrongSeqNumber($"{MediaType}", bufferedPacket.Header, RemoteTrack);
-                            RemoteTrack.LastRemoteSeqNum = bufferedPacket.Header.SequenceNumber;
+                            if (RemoteTrack != null)
+                            {
+                                LogIfWrongSeqNumber($"{MediaType}", bufferedPacket.Header, RemoteTrack);
+                                RemoteTrack.LastRemoteSeqNum = bufferedPacket.Header.SequenceNumber;
+                            }
+                            videoStream?.ProcessVideoRtpFrame(remoteEndPoint, bufferedPacket, format.Value);
+                            RaiseOnRtpPacketReceivedByIndex(remoteEndPoint, bufferedPacket);
                         }
-                        videoStream?.ProcessVideoRtpFrame(remoteEndPoint, bufferedPacket, format.Value);
-                        RaiseOnRtpPacketReceivedByIndex(remoteEndPoint, bufferedPacket);
                     }
-                }
-                else
-                {
-                    videoStream?.ProcessVideoRtpFrame(remoteEndPoint, rtpPacket, format.Value);
-                    RaiseOnRtpPacketReceivedByIndex(remoteEndPoint, rtpPacket);
-                }
+                    else
+                    {
+                        videoStream?.ProcessVideoRtpFrame(remoteEndPoint, rtpPacket, format.Value);
+                        RaiseOnRtpPacketReceivedByIndex(remoteEndPoint, rtpPacket);
+                    }
 
-                RtcpSession?.RecordRtpPacketReceived(rtpPacket);
+                    RtcpSession?.RecordRtpPacketReceived(rtpPacket);
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.LogError($"接收包出错: {ex}");
             }
         }
 
